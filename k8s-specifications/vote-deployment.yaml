@@ -4,6 +4,7 @@ metadata:
   labels:
     app: vote
   name: vote
+  namespace: voting-app
 spec:
   replicas: 1
   selector:
@@ -15,8 +16,48 @@ spec:
         app: vote
     spec:
       containers:
-      - image: dockersamples/examplevotingapp_vote
-        name: vote
-        ports:
-        - containerPort: 80
+        - image: dockersamples/examplevotingapp_vote
           name: vote
+          ports:
+            - containerPort: 80
+              name: vote
+          env:
+            - name: REDIS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secret
+                  key: REDIS_PORT
+            - name: OPTION_A
+              valueFrom:
+                secretKeyRef:
+                  name: vote-secret
+                  key: OPTION_A
+            - name: OPTION_B
+              valueFrom:
+                secretKeyRef:
+                  name: vote-secret
+                  key: OPTION_B
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
