@@ -12,17 +12,18 @@ spec:
     - host: votingapp.local
       http:
         paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: vote
-                port:
-                  number: 80
           - path: /result
             pathType: Prefix
             backend:
               service:
                 name: result
+                port:
+                  number: 80
+
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vote
                 port:
                   number: 80
