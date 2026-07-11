@@ -1,6 +1,9 @@
 pipeline {
     agent any
-
+    triggers {
+        // Triggers the job via GitHub Webhook on every push
+        githubPush() 
+    }
     environment {
         DOCKER_CREDENTIALS_ID = 'dockerhub-creds'
         GIT_CRED_ID = 'github-pat'
@@ -10,6 +13,17 @@ pipeline {
     }
 
     stages {
+
+        stage('Build Specific Folder') {
+                    when {
+                        // Adjust "vote" to your actual directory
+                        changeset "vote/**" 
+                    }
+                    steps {
+                        echo 'Changes detected in vote! Running build...'
+                        // Your build steps go here
+                    }
+        }
 
         stage('Checkout') {
             steps {
@@ -75,8 +89,15 @@ pipeline {
                 sh '''
                     python3 -m venv .venv
                     . .venv/bin/activate
+        
+                    pip install --upgrade pip
                     pip install flake8
-                    flake8 vote/ --count --max-complexity=10 --statistics
+        
+                    flake8 vote/ \
+                        --count \
+                        --max-complexity=10 \
+                        --max-line-length=120 \
+                        --statistics
                 '''
             }
         }
@@ -114,10 +135,14 @@ pipeline {
         stage('Start Minikube') {
             steps {
                 sh '''
-                    minikube stop || true
-                    minikube delete || true
-                    minikube start --cpus=2 --memory=4096 --driver=docker
-                    minikube addons enable ingress
+                    if ! minikube status >/dev/null 2>&1; then
+                        echo "Starting Minikube..."
+                        minikube start --cpus=2 --memory=4096 --driver=docker
+                        minikube addons enable ingress
+                    else
+                        echo "Minikube is already running."
+                    fi
+
                     minikube image load ${FULL_IMAGE}
                 '''
             }
@@ -142,16 +167,29 @@ pipeline {
         stage('Smoke Test') {
             steps {
                 sh '''
-                    NODE_PORT=$(kubectl get svc vote -n ${NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}')
-                    MINIKUBE_IP=$(minikube ip)
-                    
-                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://${MINIKUBE_IP}:${NODE_PORT}/)
-                    
-                    if [ "$HTTP_CODE" != "200" ]; then
-                        echo "SMOKE TEST FAILED — expected 200, got ${HTTP_CODE}"
+                    echo "Starting port-forward..."
+
+                    kubectl port-forward svc/vote 8080:80 -n ${NAMESPACE} >/tmp/portforward.log 2>&1 &
+                    PF_PID=$!
+
+                    sleep 10
+
+                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
+
+                    kill ${PF_PID} || true
+
+                    echo "HTTP Response Code: ${HTTP_CODE}"
+
+                    if [ "${HTTP_CODE}" != "200" ]; then
+                        echo "Smoke Test Failed"
+
+                        echo "===== Port Forward Logs ====="
+                        cat /tmp/portforward.log || true
+
                         exit 1
                     fi
-                    echo "Smoke test passed!"
+
+                    echo "Smoke Test Passed"
                 '''
             }
         }
@@ -180,10 +218,14 @@ pipeline {
             echo "Tagged as: ${NEW_TAG}"
         }
         failure {
-            echo "Pipeline failed — dumping cluster state..."
+            echo "Pipeline failed."
+        
             sh '''
-                kubectl get pods -n ${NAMESPACE} || true
-                kubectl logs -l app=vote -n ${NAMESPACE} --tail=50 || true
+                kubectl get all -n ${NAMESPACE} || true
+                kubectl describe svc vote -n ${NAMESPACE} || true
+                kubectl get endpoints vote -n ${NAMESPACE} || true
+                kubectl describe deployment vote -n ${NAMESPACE} || true
+                kubectl logs -l app=vote -n ${NAMESPACE} --tail=100 || true
             '''
         }
         always {
