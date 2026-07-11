@@ -2,151 +2,196 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
-        KUBECONFIG_CRED_ID = 'kubeconfig-jenkins-token'
-
+        DOCKER_CREDENTIALS_ID = 'dockerhub-creds'
+        GIT_CRED_ID = 'github-pat'
         DOCKER_USERNAME = 'naveen9521'
         IMAGE_NAME = 'vote-app-project'
         NAMESPACE = 'voting-app'
-
-        IMAGE_TAG = "${BUILD_NUMBER}"
-        FULL_IMAGE = "${DOCKER_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}"
     }
 
     stages {
 
         stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main',
+                    url: 'https://github.com/naveensaini9521/voting-app.git',
+                    credentialsId: "${GIT_CRED_ID}"
             }
         }
 
-        stage('Lint') {
+        stage('Change Detection') {
+            steps {
+                script {
+                    def changedFiles = sh(
+                        script: "git diff --name-only HEAD~1 HEAD || true",
+                        returnStdout: true
+                    ).trim()
+                    def touchesVote = changedFiles.split('\n').any { it.startsWith('vote/') }
+                    if (!touchesVote) {
+                        echo "No changes under vote/** — skipping pipeline."
+                        currentBuild.result = 'NOT_BUILT'
+                        error("Aborting: no vote/** changes.")
+                    }
+                }
+            }
+        }
+
+        stage('Auto Versioning') {
+            steps {
+                script {
+                    def latestTag = sh(
+                        script: "git describe --tags --abbrev=0 2>/dev/null || echo 'v0.0.0'",
+                        returnStdout: true
+                    ).trim()
+                    
+                    def versionStr = latestTag.startsWith('v') ? latestTag.substring(1) : latestTag
+                    def bits = versionStr.tokenize('.')
+                    def major = bits[0].toInteger()
+                    def minor = bits[1].toInteger()
+                    def patch = bits[2].toInteger()
+                    
+                    def commitLog = sh(script: "git log --format=%s -n 5", returnStdout: true).trim().toLowerCase()
+                    
+                    if (commitLog.contains('breaking change:') || commitLog.contains('feat!')) {
+                        major++; minor = 0; patch = 0
+                    } else if (commitLog.contains('feat:') || commitLog.contains('feature:')) {
+                        minor++; patch = 0
+                    } else {
+                        patch++
+                    }
+                    
+                    env.NEW_TAG = "v${major}.${minor}.${patch}"
+                    env.IMAGE_TAG = "${major}.${minor}.${patch}"
+                    env.FULL_IMAGE = "${DOCKER_USERNAME}/${IMAGE_NAME}:${env.IMAGE_TAG}"
+                    
+                    echo "New version: ${env.NEW_TAG}"
+                    echo "Image: ${env.FULL_IMAGE}"
+                }
+            }
+        }
+
+        stage('Lint: Python') {
             steps {
                 sh '''
-                python3 -m venv .venv
-                . .venv/bin/activate
-
-                pip install --upgrade pip
-                pip install flake8
-
-                flake8 vote/app.py --count --max-complexity=10 --statistics || true
+                    python3 -m venv .venv
+                    . .venv/bin/activate
+                    pip install flake8
+                    flake8 vote/ --count --max-complexity=10 --statistics
                 '''
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Lint: Kubernetes Manifests') {
             steps {
                 sh '''
-                docker build -t ${FULL_IMAGE} ./vote
+                    curl -sSLo kubeconform.tar.gz \
+                      https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz
+                    tar -xzf kubeconform.tar.gz kubeconform
+                    ./kubeconform -strict -summary k8s-specifications/*.yaml
                 '''
             }
         }
 
-        stage('Push Image') {
+        stage('Build & Push Image') {
             steps {
+                sh 'docker build -t ${FULL_IMAGE} -t ${DOCKER_USERNAME}/${IMAGE_NAME}:latest ./vote'
+
                 withCredentials([usernamePassword(
-                    credentialsId: "${DOCKER_CREDENTIALS_ID}",
+                    credentialsId: env.DOCKER_CREDENTIALS_ID,
                     usernameVariable: 'DOCKER_USER',
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
-
                     sh '''
-                    echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-
-                    docker push ${FULL_IMAGE}
-
-                    docker logout
+                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        docker push ${FULL_IMAGE}
+                        docker push ${DOCKER_USERNAME}/${IMAGE_NAME}:latest
+                        docker logout
                     '''
                 }
+            }
+        }
+
+        stage('Start Minikube') {
+            steps {
+                sh '''
+                    minikube stop || true
+                    minikube delete || true
+                    minikube start --cpus=2 --memory=4096 --driver=docker
+                    minikube addons enable ingress
+                    minikube image load ${FULL_IMAGE}
+                '''
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-
-                withKubeConfig([credentialsId: "${KUBECONFIG_CRED_ID}"]) {
-
-                    sh '''
-
-                    kubectl create namespace ${NAMESPACE} \
-                    --dry-run=client -o yaml | kubectl apply -f -
-
-                    kubectl apply -f k8s-specifications/secrets.yaml -n ${NAMESPACE}
-
-                    kubectl set image deployment/vote \
-                    vote=${FULL_IMAGE} \
-                    -n ${NAMESPACE} || true
-
-                    kubectl apply -f k8s-specifications/ -n ${NAMESPACE}
-
-                    kubectl rollout status deployment/vote \
-                    -n ${NAMESPACE} --timeout=300s
-                    '''
-                }
-            }
-        }
-
-        stage('Verify') {
-            steps {
-
-                withKubeConfig([credentialsId: "${KUBECONFIG_CRED_ID}"]) {
-
-                    sh '''
-                    kubectl get pods -n ${NAMESPACE}
-
-                    kubectl get svc -n ${NAMESPACE}
-                    '''
-                }
-            }
-        }
-
-        stage('Smoke Test') {
-
-            steps {
-
-                withKubeConfig([credentialsId: "${KUBECONFIG_CRED_ID}"]) {
-
-                    sh '''
-
-                    NODE_PORT=$(kubectl get svc vote \
-                    -n ${NAMESPACE} \
-                    -o jsonpath='{.spec.ports[0].nodePort}')
-
-                    MINIKUBE_IP=$(minikube ip)
-
-                    curl -f http://${MINIKUBE_IP}:${NODE_PORT}/
-
-                    '''
-                }
-            }
-        }
-
-    }
-
-    post {
-
-        success {
-
-            echo "Deployment Successful"
-        }
-
-        failure {
-
-            withKubeConfig([credentialsId: "${KUBECONFIG_CRED_ID}"]) {
-
                 sh '''
-
-                kubectl get pods -n ${NAMESPACE}
-
-                kubectl describe pods -n ${NAMESPACE}
-
+                    kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                    kubectl apply -f k8s-specifications/secrets.yaml -n ${NAMESPACE}
+                    
+                    cp -r k8s-specifications .ci-manifests
+                    sed -i "s|image: dockersamples/examplevotingapp_vote|image: ${FULL_IMAGE}|" .ci-manifests/vote-deployment.yaml
+                    
+                    kubectl apply -f .ci-manifests/ -n ${NAMESPACE}
+                    kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s
+                    kubectl wait --for=condition=Ready pods --all -n ${NAMESPACE} --timeout=180s
                 '''
             }
         }
 
-        always {
+        stage('Smoke Test') {
+            steps {
+                sh '''
+                    NODE_PORT=$(kubectl get svc vote -n ${NAMESPACE} -o jsonpath='{.spec.ports[0].nodePort}')
+                    MINIKUBE_IP=$(minikube ip)
+                    
+                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://${MINIKUBE_IP}:${NODE_PORT}/)
+                    
+                    if [ "$HTTP_CODE" != "200" ]; then
+                        echo "SMOKE TEST FAILED — expected 200, got ${HTTP_CODE}"
+                        exit 1
+                    fi
+                    echo "Smoke test passed!"
+                '''
+            }
+        }
 
+        stage('Tag Release') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: "${GIT_CRED_ID}",
+                    usernameVariable: 'GIT_USER',
+                    passwordVariable: 'GIT_TOKEN'
+                )]) {
+                    sh '''
+                        git config user.name "Jenkins CI"
+                        git config user.email "jenkins@localhost"
+                        git tag -a ${NEW_TAG} -m "Release ${NEW_TAG} - Build #${BUILD_NUMBER}"
+                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/naveensaini9521/voting-app.git ${NEW_TAG}
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline succeeded — ${FULL_IMAGE} deployed and verified!"
+            echo "Tagged as: ${NEW_TAG}"
+        }
+        failure {
+            echo "Pipeline failed — dumping cluster state..."
+            sh '''
+                kubectl get pods -n ${NAMESPACE} || true
+                kubectl logs -l app=vote -n ${NAMESPACE} --tail=50 || true
+            '''
+        }
+        always {
+            sh '''
+                minikube stop || true
+                minikube delete || true
+                rm -rf .ci-manifests .venv kubeconform kubeconform.tar.gz || true
+            '''
             cleanWs()
         }
     }
