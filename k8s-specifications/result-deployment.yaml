@@ -4,6 +4,7 @@ metadata:
   labels:
     app: result
   name: result
+  namespace: voting-app
 spec:
   replicas: 1
   selector:
@@ -15,13 +16,18 @@ spec:
         app: result
     spec:
       containers:
-        - image: dockersamples/examplevotingapp_result
-          name: result
+        - name: result
+          image: naveen9521/vote-app-project:latest
           ports:
             - containerPort: 80
               name: result
           env:
             - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_HOST
+            - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
                   name: postgres-secret
@@ -36,3 +42,22 @@ spec:
                 secretKeyRef:
                   name: postgres-secret
                   key: POSTGRES_DB
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
