@@ -16,8 +16,17 @@ namespace Worker
         {
             try
             {
-                var pgsql = OpenDbConnection("Server=db;Username=postgres;Password=postgres;");
-                var redisConn = OpenRedisConnection("redis");
+                // READ FROM ENVIRONMENT VARIABLES
+                string postgresHost = Environment.GetEnvironmentVariable("POSTGRES_HOST") ?? "db";
+                string postgresUser = Environment.GetEnvironmentVariable("POSTGRES_USER") ?? "postgres";
+                string postgresPassword = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD") ?? "postgres";
+                string postgresDb = Environment.GetEnvironmentVariable("POSTGRES_DB") ?? "postgres";
+                string redisHost = Environment.GetEnvironmentVariable("REDIS_HOST") ?? "redis";
+
+                string connectionString = $"Server={postgresHost};Username={postgresUser};Password={postgresPassword};Database={postgresDb}";
+                
+                var pgsql = OpenDbConnection(connectionString);
+                var redisConn = OpenRedisConnection(redisHost);
                 var redis = redisConn.GetDatabase();
 
                 // Keep alive is not implemented in Npgsql yet. This workaround was recommended:
@@ -34,7 +43,7 @@ namespace Worker
                     // Reconnect redis if down
                     if (redisConn == null || !redisConn.IsConnected) {
                         Console.WriteLine("Reconnecting Redis");
-                        redisConn = OpenRedisConnection("redis");
+                        redisConn = OpenRedisConnection(redisHost);
                         redis = redisConn.GetDatabase();
                     }
                     string json = redis.ListLeftPopAsync("votes").Result;
@@ -46,7 +55,7 @@ namespace Worker
                         if (!pgsql.State.Equals(System.Data.ConnectionState.Open))
                         {
                             Console.WriteLine("Reconnecting DB");
-                            pgsql = OpenDbConnection("Server=db;Username=postgres;Password=postgres;");
+                            pgsql = OpenDbConnection(connectionString);
                         }
                         else
                         { // Normal +1 vote requested
