@@ -4,6 +4,7 @@ metadata:
   labels:
     app: worker
   name: worker
+  namespace: voting-app
 spec:
   replicas: 1
   selector:
@@ -15,9 +16,14 @@ spec:
         app: worker
     spec:
       containers:
-        - image: dockersamples/examplevotingapp_worker
-          name: worker
+        - name: worker
+          image: naveen9521/vote-app-project:latest # Your custom image
           env:
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_HOST
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
@@ -43,3 +49,10 @@ spec:
                 secretKeyRef:
                   name: redis-secret
                   key: REDIS_PORT
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
