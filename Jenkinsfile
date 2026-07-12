@@ -13,18 +13,25 @@ pipeline {
     }
 
     stages {
-
-        stage('Build Specific Folder') {
-                    when {
-                        // Adjust "vote" to your actual directory
-                        changeset "vote/**" 
-                    }
-                    steps {
-                        echo 'Changes detected in vote! Running build...'
-                        // Your build steps go here
-                    }
+        
+        stage('Verify Cluster') {
+            steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                sh '''
+                    echo "========== Cluster Nodes =========="
+                    kubectl set image deployment/vote -n voting-app vote=docker.io/naveen9521/vote-app-project:latest
+                    kubectl rollout restart deployment/vote -n voting-app
+                    echo ""
+                    echo "========== Pods in ${NAMESPACE} =========="
+                    kubectl get pods -n ${NAMESPACE}
+                    echo ""
+                    echo "========== Services in ${NAMESPACE} =========="
+                    kubectl get svc -n ${NAMESPACE}
+                '''
+                }
+            }
         }
-
+        
         stage('Checkout') {
             steps {
                 git branch: 'main',
@@ -95,6 +102,7 @@ pipeline {
         
                     flake8 vote/ \
                         --count \
+                        // --exit-zero \
                         --max-complexity=10 \
                         --max-line-length=120 \
                         --statistics
@@ -124,73 +132,51 @@ pipeline {
                 )]) {
                     sh '''
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                        docker push ${FULL_IMAGE}
+                        // docker push ${FULL_IMAGE}
+                        docker push ${DOCKER_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}
                         docker push ${DOCKER_USERNAME}/${IMAGE_NAME}:latest
                         docker logout
                     '''
                 }
             }
         }
-
-        stage('Start Minikube') {
+        
+        stage('Verify Cluster') {
             steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
                 sh '''
-                    if ! minikube status >/dev/null 2>&1; then
-                        echo "Starting Minikube..."
-                        minikube start --cpus=2 --memory=4096 --driver=docker
-                        minikube addons enable ingress
-                    else
-                        echo "Minikube is already running."
-                    fi
-
-                    minikube image load ${FULL_IMAGE}
+                    echo "========== Cluster Nodes =========="
+                    kubectl set image deployment/vote -n voting-app vote=docker.io/naveen9521/vote-app-project:latest
+                    kubectl rollout restart deployment/vote -n voting-app
+                    echo ""
+                    echo "========== Pods in ${NAMESPACE} =========="
+                    kubectl get pods -n ${NAMESPACE}
+                    echo ""
+                    echo "========== Services in ${NAMESPACE} =========="
+                    kubectl get svc -n ${NAMESPACE}
                 '''
+                }
             }
-        }
 
-        stage('Deploy to Kubernetes') {
-            steps {
-                sh '''
-                    kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-                    kubectl apply -f k8s-specifications/secrets.yaml -n ${NAMESPACE}
-                    
-                    cp -r k8s-specifications .ci-manifests
-                    sed -i "s|image: dockersamples/examplevotingapp_vote|image: ${FULL_IMAGE}|" .ci-manifests/vote-deployment.yaml
-                    
-                    kubectl apply -f .ci-manifests/ -n ${NAMESPACE}
-                    kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s
-                    kubectl wait --for=condition=Ready pods --all -n ${NAMESPACE} --timeout=180s
-                '''
             }
-        }
 
         stage('Smoke Test') {
             steps {
+                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+
                 sh '''
-                    echo "Starting port-forward..."
-
-                    kubectl port-forward svc/vote 8080:80 -n ${NAMESPACE} >/tmp/portforward.log 2>&1 &
+                    kubectl port-forward -n ${NAMESPACE} svc/vote 18080:80 > /tmp/pf.log 2>&1 &
                     PF_PID=$!
-
-                    sleep 10
-
-                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
-
-                    kill ${PF_PID} || true
-
-                    echo "HTTP Response Code: ${HTTP_CODE}"
-
-                    if [ "${HTTP_CODE}" != "200" ]; then
-                        echo "Smoke Test Failed"
-
-                        echo "===== Port Forward Logs ====="
-                        cat /tmp/portforward.log || true
-
+                    sleep 5
+                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18080/)
+                    kill -9 $PF_PID 2>/dev/null || true
+                    if [ "$HTTP_CODE" != "200" ]; then
+                        echo "SMOKE TEST FAILED — expected 200, got ${HTTP_CODE}"
                         exit 1
                     fi
-
-                    echo "Smoke Test Passed"
+                    echo "Smoke test passed!"
                 '''
+                }
             }
         }
 
@@ -204,8 +190,9 @@ pipeline {
                     sh '''
                         git config user.name "Jenkins CI"
                         git config user.email "jenkins@localhost"
+                        git remote set-url origin https://${GIT_USER}:${GIT_TOKEN}@github.com/naveensaini9521/voting-app.git
                         git tag -a ${NEW_TAG} -m "Release ${NEW_TAG} - Build #${BUILD_NUMBER}"
-                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/naveensaini9521/voting-app.git ${NEW_TAG}
+                        git push origin ${NEW_TAG}
                     '''
                 }
             }
