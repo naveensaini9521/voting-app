@@ -1,7 +1,6 @@
 pipeline {
     agent any
     triggers {
-        // Triggers the job via GitHub Webhook on every push
         githubPush() 
     }
     environment {
@@ -17,17 +16,47 @@ pipeline {
         stage('Verify Cluster') {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-                sh '''
-                    echo "========== Cluster Nodes =========="
-                    kubectl set image deployment/vote -n voting-app vote=docker.io/naveen9521/vote-app-project:latest
-                    kubectl rollout restart deployment/vote -n voting-app
-                    echo ""
-                    echo "========== Pods in ${NAMESPACE} =========="
-                    kubectl get pods -n ${NAMESPACE}
-                    echo ""
-                    echo "========== Services in ${NAMESPACE} =========="
-                    kubectl get svc -n ${NAMESPACE}
-                '''
+                    sh '''
+                        set -e
+        
+                        NEW_IMAGE="docker.io/${DOCKER_USERNAME}/${IMAGE_NAME}:latest"
+        
+                        echo "========== Verify Cluster =========="
+                        kubectl cluster-info
+                        kubectl get nodes
+        
+                        echo ""
+                        echo "========== Deploying =========="
+                        echo "Image: ${NEW_IMAGE}"
+        
+                        kubectl set image deployment/vote \
+                            vote=${NEW_IMAGE} \
+                            -n ${NAMESPACE}
+        
+                        echo ""
+                        echo "========== Waiting for Rollout =========="
+        
+                        if kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s; then
+                            echo "Deployment Successful"
+                        else
+                            echo "Deployment Failed!"
+                            echo "Rolling back to previous working version..."
+        
+                            kubectl rollout undo deployment/vote -n ${NAMESPACE}
+        
+                            kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s
+        
+                            exit 1
+                        fi
+        
+                        echo ""
+                        echo "========== Pods =========="
+                        kubectl get pods -n ${NAMESPACE}
+        
+                        echo ""
+                        echo "========== Services =========="
+                        kubectl get svc -n ${NAMESPACE}
+                    '''
                 }
             }
         }
@@ -47,12 +76,20 @@ pipeline {
                         script: "git diff --name-only HEAD~1 HEAD || true",
                         returnStdout: true
                     ).trim()
-                    def touchesVote = changedFiles.split('\n').any { it.startsWith('vote/') }
+        
+                    echo "========== Changed Files =========="
+                    echo changedFiles
+        
+                    def touchesVote = changedFiles.split("\\n").any {
+                        it.startsWith("vote/")
+                    }
+        
                     if (!touchesVote) {
-                        echo "No changes under vote/** — skipping pipeline."
                         currentBuild.result = 'NOT_BUILT'
                         error("Aborting: no vote/** changes.")
                     }
+        
+                    echo "Changes detected in vote/. Continuing..."
                 }
             }
         }
@@ -96,16 +133,9 @@ pipeline {
                 sh '''
                     python3 -m venv .venv
                     . .venv/bin/activate
-        
                     pip install --upgrade pip
                     pip install flake8
-        
-                    flake8 vote/ \
-                        --count \
-                        // --exit-zero \
-                        --max-complexity=10 \
-                        --max-line-length=120 \
-                        --statistics
+                    flake8 vote/ --count --max-complexity=10 --max-line-length=120 --statistics --exit-zero
                 '''
             }
         }
@@ -123,8 +153,12 @@ pipeline {
 
         stage('Build & Push Image') {
             steps {
-                sh 'docker build -t ${FULL_IMAGE} -t ${DOCKER_USERNAME}/${IMAGE_NAME}:latest ./vote'
-
+                sh '''
+                    export DOCKER_BUILDKIT=1
+        
+                    docker build -t ${FULL_IMAGE} -t ${DOCKER_USERNAME}/${IMAGE_NAME}:latest ./vote
+                '''
+        
                 withCredentials([usernamePassword(
                     credentialsId: env.DOCKER_CREDENTIALS_ID,
                     usernameVariable: 'DOCKER_USER',
@@ -132,71 +166,69 @@ pipeline {
                 )]) {
                     sh '''
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                        // docker push ${FULL_IMAGE}
-                        docker push ${DOCKER_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker push ${FULL_IMAGE}
                         docker push ${DOCKER_USERNAME}/${IMAGE_NAME}:latest
                         docker logout
                     '''
                 }
             }
         }
-        
-        stage('Verify Cluster') {
-            steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-                sh '''
-                    echo "========== Cluster Nodes =========="
-                    kubectl set image deployment/vote -n voting-app vote=docker.io/naveen9521/vote-app-project:latest
-                    kubectl rollout restart deployment/vote -n voting-app
-                    echo ""
-                    echo "========== Pods in ${NAMESPACE} =========="
-                    kubectl get pods -n ${NAMESPACE}
-                    echo ""
-                    echo "========== Services in ${NAMESPACE} =========="
-                    kubectl get svc -n ${NAMESPACE}
-                '''
-                }
-            }
-
-            }
 
         stage('Smoke Test') {
             steps {
                 withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-
-                sh '''
-                    kubectl port-forward -n ${NAMESPACE} svc/vote 18080:80 > /tmp/pf.log 2>&1 &
-                    PF_PID=$!
-                    sleep 5
-                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:18080/)
-                    kill -9 $PF_PID 2>/dev/null || true
-                    if [ "$HTTP_CODE" != "200" ]; then
-                        echo "SMOKE TEST FAILED — expected 200, got ${HTTP_CODE}"
-                        exit 1
-                    fi
-                    echo "Smoke test passed!"
-                '''
+                    sh '''
+                        kubectl port-forward -n ${NAMESPACE} svc/vote 8080:80 >/tmp/pf.log 2>&1 &
+                        PF_PID=$!
+        
+                        sleep 5
+        
+                        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
+        
+                        kill $PF_PID 2>/dev/null || true
+                        wait $PF_PID 2>/dev/null || true
+        
+                        if [ "$HTTP_CODE" != "200" ]; then
+                            echo "Smoke test failed: expected 200, got ${HTTP_CODE}"
+                            exit 1
+                        fi
+        
+                        echo "Smoke test passed."
+                    '''
                 }
             }
         }
 
         stage('Tag Release') {
+            // when {
+            //     branch 'main'
+            // }
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: "${GIT_CRED_ID}",
-                    usernameVariable: 'GIT_USER',
-                    passwordVariable: 'GIT_TOKEN'
+                withCredentials([string(
+                    credentialsId: env.GIT_CRED_ID,
+                    variable: 'GIT_TOKEN'
                 )]) {
                     sh '''
+                        set -e
+                        
+                        echo "Creating tag: ${NEW_TAG}"
+                        
                         git config user.name "Jenkins CI"
                         git config user.email "jenkins@localhost"
-                        git remote set-url origin https://${GIT_USER}:${GIT_TOKEN}@github.com/naveensaini9521/voting-app.git
-                        git tag -a ${NEW_TAG} -m "Release ${NEW_TAG} - Build #${BUILD_NUMBER}"
-                        git push origin ${NEW_TAG}
+                        git remote set-url origin https://naveensaini9521:${GIT_TOKEN}@github.com/naveensaini9521/voting-app.git
+                        git fetch --tags
+                        
+                        if git rev-parse -q --verify "refs/tags/${NEW_TAG}" >/dev/null 2>&1; then
+                            echo "Tag ${NEW_TAG} already exists. Skipping."
+                        else
+                            git tag -a "${NEW_TAG}" -m "Release ${NEW_TAG} - Build #${BUILD_NUMBER} - Image ${FULL_IMAGE}"
+                            git push origin "${NEW_TAG}"
+                            echo "Tag ${NEW_TAG} pushed successfully"
+                        fi
                     '''
                 }
             }
-        }
+        }   
     }
 
     post {
@@ -206,19 +238,18 @@ pipeline {
         }
         failure {
             echo "Pipeline failed."
-        
-            sh '''
-                kubectl get all -n ${NAMESPACE} || true
-                kubectl describe svc vote -n ${NAMESPACE} || true
-                kubectl get endpoints vote -n ${NAMESPACE} || true
-                kubectl describe deployment vote -n ${NAMESPACE} || true
-                kubectl logs -l app=vote -n ${NAMESPACE} --tail=100 || true
-            '''
+            withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                sh '''
+                    kubectl get all -n ${NAMESPACE} || true
+                    kubectl describe svc vote -n ${NAMESPACE} || true
+                    kubectl get endpoints vote -n ${NAMESPACE} || true
+                    kubectl describe deployment vote -n ${NAMESPACE} || true
+                    kubectl logs -l app=vote -n ${NAMESPACE} --tail=100 || true
+                '''
+            }
         }
         always {
             sh '''
-                minikube stop || true
-                minikube delete || true
                 rm -rf .ci-manifests .venv kubeconform kubeconform.tar.gz || true
             '''
             cleanWs()
