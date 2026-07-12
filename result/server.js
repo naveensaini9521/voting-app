@@ -2,6 +2,7 @@ var express = require('express'),
     async = require('async'),
     { Pool } = require('pg'),
     cookieParser = require('cookie-parser'),
+    path = require('path'),
     app = express(),
     server = require('http').Server(app),
     io = require('socket.io')(server);
@@ -9,16 +10,22 @@ var express = require('express'),
 var port = process.env.PORT || 4000;
 
 io.on('connection', function (socket) {
-
   socket.emit('message', { text : 'Welcome!' });
-
   socket.on('subscribe', function (data) {
     socket.join(data.channel);
   });
 });
 
+// ✅ READ DATABASE CONFIG FROM ENVIRONMENT VARIABLES
+var postgresHost = process.env.POSTGRES_HOST || 'db';
+var postgresUser = process.env.POSTGRES_USER || 'postgres';
+var postgresPassword = process.env.POSTGRES_PASSWORD || 'postgres';
+var postgresDb = process.env.POSTGRES_DB || 'postgres';
+
+var connectionString = 'postgres://' + postgresUser + ':' + postgresPassword + '@' + postgresHost + '/' + postgresDb;
+
 var pool = new Pool({
-  connectionString: 'postgres://postgres:postgres@db/postgres'
+  connectionString: connectionString
 });
 
 async.retry(
@@ -48,23 +55,20 @@ function getVotes(client) {
       var votes = collectVotesFromResult(result);
       io.sockets.emit("scores", JSON.stringify(votes));
     }
-
     setTimeout(function() {getVotes(client) }, 1000);
   });
 }
 
 function collectVotesFromResult(result) {
   var votes = {a: 0, b: 0};
-
   result.rows.forEach(function (row) {
     votes[row.vote] = parseInt(row.count);
   });
-
   return votes;
 }
 
 app.use(cookieParser());
-app.use(express.urlencoded());
+app.use(express.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/views'));
 
 app.get('/', function (req, res) {
