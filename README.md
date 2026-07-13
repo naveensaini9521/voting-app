@@ -1,18 +1,27 @@
-# Docker Sample Voting App on Kubernetes with CI/CD
+# Docker Sample Voting App on Kubernetes with Jenkins CI/CD
 
-## Overview
+![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.33-blue)
+![Docker](https://img.shields.io/badge/Docker-Enabled-blue)
+![Jenkins](https://img.shields.io/badge/Jenkins-CI-red)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-This project deploys the Docker Sample Voting Application on Kubernetes using Minikube. It includes a complete CI/CD pipeline using Jenkins that automatically builds, tests, pushes Docker images to Docker Hub, and deploys the application to Kubernetes.
+## Table of Contents
 
-The application consists of five services:
-
-- Vote (Python Flask)
-- Worker (.NET)
-- Result (Node.js)
-- Redis
-- PostgreSQL
-
----
+- Overview
+- Architecture
+- Tech Stack
+- Repository Structure
+- Improvements
+- Prerequisites
+- Quick Start
+- Manual Deployment
+- Jenkins Pipeline
+- Verification
+- Troubleshooting
+- Trade-offs
+- Future Improvements
+- Video Walkthrough
+- Author
 
 # Architecture
 
@@ -29,6 +38,33 @@ The application consists of five services:
 ```
 
 ---
+
+## Architecture
+
+![Architecture](docs/architecture.png)
+
+## Overview
+
+This project demonstrates a production-inspired deployment of the Docker Sample Voting Application on Kubernetes using Minikube.
+
+The solution includes:
+
+- Kubernetes Deployments and StatefulSets
+- Jenkins-based CI/CD pipeline
+- Docker image versioning using Semantic Versioning
+- Kubernetes Secrets for sensitive configuration
+- Liveness and Readiness Probes
+- NGINX Ingress
+- Automatic deployment validation with smoke tests
+- Automatic rollback on failed deployments
+
+The application consists of five microservices:
+
+- Vote (Python Flask)
+- Worker (.NET)
+- Result (Node.js)
+- Redis
+- PostgreSQL
 
 # Tech Stack
 
@@ -51,8 +87,17 @@ The application consists of five services:
 ```
 .
 ├── vote/
+│   ├── app.py
+│   ├── Dockerfile
+│   └── requirements.txt
 ├── worker/
+│   ├── Program.cs
+│   ├── Worker.csproj
+│   └── Dockerfile
 ├── result/
+│   ├── server.js
+│   ├── package.json
+│   └── Dockerfile
 ├── k8s-specifications/
 │   ├── namespace.yaml
 │   ├── secrets.yaml
@@ -67,26 +112,53 @@ The application consists of five services:
 │   ├── redis-service.yaml
 │   └── ingress.yaml
 ├── Jenkinsfile
+├── start.sh
+├── bootstrap.sh
 └── README.md
 ```
 
 ---
 
-# Features
+## Key Features
 
-- Dockerized microservices
-- Kubernetes Deployments
-- StatefulSets for PostgreSQL and Redis
+- Production-style Kubernetes deployment
+- Jenkins CI/CD pipeline
+- Automatic Docker image build and push
+- Semantic Versioning
 - Kubernetes Secrets
+- Stateful PostgreSQL with Persistent Volumes
+- Stateful Redis
 - Resource Requests & Limits
-- Readiness Probes
-- Liveness Probes
-- Ingress
-- Jenkins CI/CD Pipeline
-- Automatic Docker Image Build
-- Automatic Deployment to Kubernetes
+- Readiness & Liveness Probes
+- Automatic Smoke Testing
+- Automatic Rollback
+- NGINX Ingress
 
 ---
+
+## Improvements Over Original Kubernetes Manifests
+
+The original Docker Sample Voting App manifests were functional but not production-ready.
+
+The following improvements were implemented:
+
+```
+| Improvement                | Why                                         |
+| -------------------------- | ------------------------------------------- |
+| Kubernetes Secrets         | Removed database credentials from YAML      |
+| StatefulSet for PostgreSQL | Persistent storage across pod restarts      |
+| StatefulSet for Redis      | Stable network identity                     |
+| Liveness Probes            | Automatic recovery from failures            |
+| Readiness Probes           | Prevent traffic before application is ready |
+| Resource Requests          | Better scheduling                           |
+| Resource Limits            | Prevent noisy neighbor issues               |
+| NGINX Ingress              | Browser access without NodePort             |
+| Namespace Isolation        | Better resource organization                |
+| Jenkins CI/CD              | Automated build and deployment              |
+| Semantic Versioning        | Versioned Docker images                     |
+| Smoke Testing              | Validate deployment after rollout           |
+| Automatic Rollback         | Recover from failed deployments             |
+```
 
 # Prerequisites
 
@@ -106,6 +178,8 @@ docker --version
 kubectl version --client
 minikube version
 jenkins --version
+git --version
+
 ```
 
 ---
@@ -113,13 +187,15 @@ jenkins --version
 # Start Minikube
 
 ```bash
-minikube start --driver=docker
+minikube start --cpus=2 --memory=4096 --driver=docker
 ```
 
 Enable ingress
 
 ```bash
 minikube addons enable ingress
+minikube addons enable metrics-server
+
 ```
 
 Verify
@@ -133,12 +209,18 @@ kubectl get nodes
 # Clone Repository
 
 ```bash
-git clone https://github.com/<username>/<repository>.git
-
-cd repository
+git clone https://github.com/naveensaini9521/voting-app.git
+cd voting-app
 ```
 
 ---
+
+# Run One-Click Deployment
+
+```bash
+chmod +x start.sh
+./start.sh
+```
 
 # Build Docker Images
 
@@ -266,6 +348,13 @@ kubectl logs deployment/result -n voting-app
 ```
 
 ---
+
+# Ingress not accessible
+
+```bash
+minikube tunnel
+kubectl get ingress -n voting-app
+```
 
 # Jenkins Pipeline
 
@@ -512,14 +601,16 @@ kubectl delete namespace voting-app
 # Future Improvements
 
 - Helm Charts
+- Kustomize
+- ArgoCD GitOps
 - Horizontal Pod Autoscaler
 - Prometheus Monitoring
-- Grafana Dashboard
-- ArgoCD GitOps
-- Image Versioning
-- SonarQube Integration
-- Trivy Security Scan
-- GitHub Actions Support
+- Grafana Dashboards
+- Trivy Image Scanning
+- SonarQube Code Quality
+- Network Policies
+- Pod Security Context
+- Multi-environment Deployments
 
 ---
 
