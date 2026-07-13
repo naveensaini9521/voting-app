@@ -95,7 +95,6 @@ The application consists of five microservices:
 │   ├── package.json
 │   └── Dockerfile
 ├── k8s-specifications/
-│   ├── namespace.yaml
 │   ├── secrets.yaml
 │   ├── vote-deployment.yaml
 │   ├── vote-service.yaml
