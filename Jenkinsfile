@@ -13,59 +13,44 @@ pipeline {
 
     stages {
         
-        stage('Verify Cluster') {
-            steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
-                    sh '''
-                        set -e
-        
-                        NEW_IMAGE="docker.io/${DOCKER_USERNAME}/${IMAGE_NAME}:latest"
-        
-                        echo "========== Verify Cluster =========="
-                        kubectl cluster-info
-                        kubectl get nodes
-        
-                        echo ""
-                        echo "========== Deploying =========="
-                        echo "Image: ${NEW_IMAGE}"
-        
-                        kubectl set image deployment/vote \
-                            vote=${NEW_IMAGE} \
-                            -n ${NAMESPACE}
-        
-                        echo ""
-                        echo "========== Waiting for Rollout =========="
-        
-                        if kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s; then
-                            echo "Deployment Successful"
-                        else
-                            echo "Deployment Failed!"
-                            echo "Rolling back to previous working version..."
-        
-                            kubectl rollout undo deployment/vote -n ${NAMESPACE}
-        
-                            kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s
-        
-                            exit 1
-                        fi
-        
-                        echo ""
-                        echo "========== Pods =========="
-                        kubectl get pods -n ${NAMESPACE}
-        
-                        echo ""
-                        echo "========== Services =========="
-                        kubectl get svc -n ${NAMESPACE}
-                    '''
-                }
-            }
-        }
-        
         stage('Checkout') {
             steps {
                 git branch: 'main',
                     url: 'https://github.com/naveensaini9521/voting-app.git',
                     credentialsId: "${GIT_CRED_ID}"
+            }
+        }
+        
+        stage('Verify Cluster') {
+            steps {
+                withCredentials([file(credentialsId: 'minikube-kubeconfig', variable: 'KUBECONFIG')]) {
+                    sh '''
+                        set -e
+
+                        NEW_IMAGE="docker.io/${DOCKER_USERNAME}/${IMAGE_NAME}:latest"
+                        kubectl cluster-info
+                        kubectl get nodes
+
+                        echo "Image: ${NEW_IMAGE}"
+
+                        kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+                        kubectl apply -f k8s-specifications/secrets.yaml -n ${NAMESPACE}
+                        kubectl set image deployment/vote vote=${NEW_IMAGE} -n ${NAMESPACE}
+                        kubectl apply -f k8s-specifications/ -n ${NAMESPACE}
+
+                        if kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s; then
+                            echo "Deployment successful."
+                        else
+                            echo "Deployment failed. Rolling back..."
+                            kubectl rollout undo deployment/vote -n ${NAMESPACE}
+                            kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s
+                            exit 1
+                        fi
+
+                        kubectl get pods -n ${NAMESPACE}
+                        kubectl get svc -n ${NAMESPACE}
+                    '''
+                }
             }
         }
 
@@ -174,9 +159,23 @@ pipeline {
             }
         }
 
+        stage('Create Fresh Minikube Cluster') {
+            steps {
+                sh '''
+                    minikube stop 2>/dev/null || true
+                    minikube delete 2>/dev/null || true
+                    minikube start --cpus=2 --memory=4096 --driver=docker
+                    minikube addons enable ingress
+                    kubectl wait --for=condition=Ready nodes --all --timeout=120s
+                    kubectl rollout status deployment/coredns -n kube-system --timeout=120s
+                    kubectl get nodes
+                '''
+            }
+        }
+        
         stage('Smoke Test') {
             steps {
-                withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+                withCredentials([file(credentialsId: 'minikube-kubeconfig', variable: 'KUBECONFIG')]) {
                     sh '''
                         kubectl port-forward -n ${NAMESPACE} svc/vote 8080:80 >/tmp/pf.log 2>&1 &
                         PF_PID=$!
