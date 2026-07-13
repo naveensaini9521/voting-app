@@ -7,41 +7,17 @@
 
 ## Table of Contents
 
-- Overview
-- Architecture
-- Tech Stack
-- Repository Structure
-- Improvements
-- Prerequisites
-- Quick Start
-- Manual Deployment
-- Jenkins Pipeline
-- Verification
-- Troubleshooting
-- Trade-offs
-- Future Improvements
-- Video Walkthrough
-- Author
-
-# Architecture
-
-```
-                 User
-                   |
-             Kubernetes Ingress
-              /             \
-             /               \
-        Vote Service      Result Service
-             |                  |
-             |                  |
-          Redis <---------- Worker ---------> PostgreSQL
-```
-
----
-
-## Architecture
-
-![Architecture](docs/architecture.png)
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Repository Structure](#repository-structure)
+- [Improvements](#improvements-over-original-kubernetes-manifests)
+- [Prerequisites](#prerequisites)
+- [Jenkins Pipeline](#jenkins-pipeline)
+- [Verification](#verify-deployment)
+- [Troubleshooting](#problems-faced)
+- [Future Improvements](#future-improvements)
+- [Author](#author)
 
 ## Overview
 
@@ -65,6 +41,26 @@ The application consists of five microservices:
 - Result (Node.js)
 - Redis
 - PostgreSQL
+
+# Architecture
+
+```
+                 User
+                   |
+             Kubernetes Ingress
+              /             \
+             /               \
+        Vote Service      Result Service
+             |                  |
+             |                  |
+          Redis <---------- Worker ---------> PostgreSQL
+```
+
+---
+
+## Architecture
+
+![Architecture](docs/architecture.png)
 
 # Tech Stack
 
