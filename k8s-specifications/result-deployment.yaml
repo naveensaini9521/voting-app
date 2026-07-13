@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: result
-          image: naveen9521/vote-app-project:latest
+          image: naveen9521/result-app:latest
           ports:
             - containerPort: 80
               name: result

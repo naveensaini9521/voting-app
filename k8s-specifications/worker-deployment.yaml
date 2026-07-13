@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: worker
-          image: naveen9521/vote-app-project:latest # Your custom image
+          image: naveen9521/worker-app:latest # Your custom image
           env:
             - name: POSTGRES_HOST
               valueFrom:
@@ -56,3 +56,24 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "200m"
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "pgrep -f 'dotnet Worker.dll' || exit 1"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "pgrep -f 'dotnet Worker.dll' || exit 1"
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
