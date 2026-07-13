@@ -362,6 +362,23 @@ Pipeline Stages
 5. Deploy to Minikube
 6. Verify Deployment
 
+```
+GitHub
+   │
+   ▼
+Jenkins
+   │
+   ├── Checkout
+   ├── Run Tests
+   ├── Lint
+   ├── Build Docker Images
+   ├── Push Versioned Images
+   ├── Update Kubernetes Manifests
+   ├── kubectl apply
+   ├── Smoke Test
+   └── Tag Release
+```
+
 ---
 
 # Jenkins Credentials
