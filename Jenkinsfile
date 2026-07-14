@@ -20,39 +20,6 @@ pipeline {
                     credentialsId: "${GIT_CRED_ID}"
             }
         }
-        
-        stage('Verify Cluster') {
-            steps {
-                withCredentials([file(credentialsId: 'minikube-kubeconfig', variable: 'KUBECONFIG')]) {
-                    sh '''
-                        set -e
-
-                        NEW_IMAGE="docker.io/${DOCKER_USERNAME}/${IMAGE_NAME}:latest"
-                        kubectl cluster-info
-                        kubectl get nodes
-
-                        echo "Image: ${NEW_IMAGE}"
-
-                        kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
-                        kubectl apply -f k8s-specifications/secrets.yaml -n ${NAMESPACE}
-                        kubectl set image deployment/vote vote=${NEW_IMAGE} -n ${NAMESPACE}
-                        kubectl apply -f k8s-specifications/ -n ${NAMESPACE}
-
-                        if kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s; then
-                            echo "Deployment successful."
-                        else
-                            echo "Deployment failed. Rolling back..."
-                            kubectl rollout undo deployment/vote -n ${NAMESPACE}
-                            kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s
-                            exit 1
-                        fi
-
-                        kubectl get pods -n ${NAMESPACE}
-                        kubectl get svc -n ${NAMESPACE}
-                    '''
-                }
-            }
-        }
 
         stage('Change Detection') {
             steps {
@@ -159,42 +126,50 @@ pipeline {
             }
         }
 
-        stage('Create Fresh Minikube Cluster') {
+        stage('Deploy to Fresh kind Cluster & Smoke Test') {
             steps {
-                sh '''
-                    minikube stop 2>/dev/null || true
-                    minikube delete 2>/dev/null || true
-                    minikube start --cpus=2 --memory=4096 --driver=docker
-                    minikube addons enable ingress
-                    kubectl wait --for=condition=Ready nodes --all --timeout=120s
-                    kubectl rollout status deployment/coredns -n kube-system --timeout=120s
+                sh '''#!/bin/bash
+                    set -euo pipefail
+        
+                    echo "===== Create fresh kind cluster ====="
+                    kind delete cluster --name vote-ci || true
+                    kind create cluster --name vote-ci --wait 300s
+        
+                    echo "===== Verify cluster ====="
+                    kubectl cluster-info
                     kubectl get nodes
+        
+                    echo "===== Load Docker image into kind ====="
+                    kind load docker-image ${FULL_IMAGE} --name vote-ci
+        
+                    echo "===== Create namespace ====="
+                    kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+        
+                    echo "===== Deploy vote service ====="
+                    kubectl apply -f k8s-specifications/ -n ${NAMESPACE}
+                    kubectl set image deployment/vote vote=${FULL_IMAGE} -n ${NAMESPACE}
+        
+                    echo "===== Wait for deployment ====="
+                    kubectl rollout status deployment/vote -n ${NAMESPACE} --timeout=180s
+        
+                    echo "===== Smoke Test ====="
+                    kubectl port-forward svc/vote -n ${NAMESPACE} 8080:80 >/tmp/port-forward.log 2>&1 &
+                    PF_PID=$!
+                    trap "kill $PF_PID 2>/dev/null || true" EXIT
+        
+                    sleep 10
+                    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
+        
+                    if [ "$HTTP_CODE" != "200" ]; then
+                        echo "Smoke test failed! Expected HTTP 200 but got ${HTTP_CODE}"
+                        kubectl get pods -n ${NAMESPACE}
+                        kubectl describe deployment vote -n ${NAMESPACE}
+                        kubectl logs deployment/vote -n ${NAMESPACE} --tail=100
+                        exit 1
+                    fi
+        
+                    echo "Smoke test passed (HTTP 200)"
                 '''
-            }
-        }
-        
-        stage('Smoke Test') {
-            steps {
-                withCredentials([file(credentialsId: 'minikube-kubeconfig', variable: 'KUBECONFIG')]) {
-                    sh '''
-                        kubectl port-forward -n ${NAMESPACE} svc/vote 8080:80 >/tmp/pf.log 2>&1 &
-                        PF_PID=$!
-        
-                        sleep 5
-        
-                        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/)
-        
-                        kill $PF_PID 2>/dev/null || true
-                        wait $PF_PID 2>/dev/null || true
-        
-                        if [ "$HTTP_CODE" != "200" ]; then
-                            echo "Smoke test failed: expected 200, got ${HTTP_CODE}"
-                            exit 1
-                        fi
-        
-                        echo "Smoke test passed."
-                    '''
-                }
             }
         }
 
@@ -237,7 +212,7 @@ pipeline {
         }
         failure {
             echo "Pipeline failed."
-            withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+            withCredentials([file(credentialsId: 'minikube-kubeconfig', variable: 'KUBECONFIG')]) {
                 sh '''
                     kubectl get all -n ${NAMESPACE} || true
                     kubectl describe svc vote -n ${NAMESPACE} || true
