@@ -45,23 +45,9 @@ The application consists of five microservices:
 
 # Architecture
 
-```
-                 User
-                   |
-             Kubernetes Ingress
-              /             \
-             /               \
-        Vote Service      Result Service
-             |                  |
-             |                  |
-          Redis <---------- Worker ---------> PostgreSQL
-```
+![Architecture](docs/Kubernetes_architecture.png)
 
 ---
-
-## Architecture
-
-![Architecture](docs/architecture.png)
 
 # Tech Stack
 
