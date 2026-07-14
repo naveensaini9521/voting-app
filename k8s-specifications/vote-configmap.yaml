@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vote-config
+  namespace: voting-app
+data:
+  OPTION_A: "Cats"
+  OPTION_B: "Dogs"
