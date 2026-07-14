@@ -184,28 +184,6 @@ git --version
 
 ---
 
-# Start Minikube
-
-```bash
-minikube start --cpus=2 --memory=4096 --driver=docker
-```
-
-Enable ingress
-
-```bash
-minikube addons enable ingress
-minikube addons enable metrics-server
-
-```
-
-Verify
-
-```bash
-kubectl get nodes
-```
-
----
-
 # Clone Repository
 
 ```bash
@@ -228,13 +206,19 @@ OR
 make demo
 ```
 
+# Test vote & result
+
+````bash
+chmod +x test.sh
+./test.sh
+```
 # Build Docker Images
 
 Vote
 
 ```bash
 docker build -t vote-app ./vote
-```
+````
 
 Worker
 
