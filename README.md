@@ -197,7 +197,7 @@ cd voting-app
 
 ```bash
 chmod +x bootstrap.sh
-./bootbootstrap.sh
+./bootstrap.sh
 ```
 
 OR
