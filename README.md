@@ -106,10 +106,14 @@ The application consists of five microservices:
 │   ├── db-service.yaml
 │   ├── redis-statefulset.yaml
 │   ├── redis-service.yaml
+│   ├── network-policy.yaml
+│   ├── pdb.yaml
+│   ├── vote-configmap.yaml
 │   └── ingress.yaml
 ├── Jenkinsfile
-├── start.sh
+├── Makefile
 ├── bootstrap.sh
+├── test.sh
 └── README.md
 ```
 
@@ -214,8 +218,14 @@ cd voting-app
 # Run One-Click Deployment
 
 ```bash
-chmod +x start.sh
-./start.sh
+chmod +x bootstrap.sh
+./bootbootstrap.sh
+```
+
+OR
+
+```bash
+make demo
 ```
 
 # Build Docker Images
@@ -354,30 +364,63 @@ kubectl get ingress -n voting-app
 
 # Jenkins Pipeline
 
-Pipeline Stages
+The project uses a Jenkins Declarative Pipeline that automatically builds, validates, versions, deploys, and verifies the application whenever changes are pushed to GitHub.
 
-1. Clone Repository
-2. Build Docker Images
-3. Push Images to Docker Hub
-4. Update Kubernetes Deployment
-5. Deploy to Minikube
-6. Verify Deployment
+## Pipeline Stages
 
-```
-GitHub
-   │
-   ▼
-Jenkins
-   │
-   ├── Checkout
-   ├── Run Tests
-   ├── Lint
-   ├── Build Docker Images
-   ├── Push Versioned Images
-   ├── Update Kubernetes Manifests
-   ├── kubectl apply
-   ├── Smoke Test
-   └── Tag Release
+1. **Checkout** – Clone the latest source code from GitHub.
+2. **Change Detection** – Continue only if files under `vote/` have changed.
+3. **Auto Versioning** – Generate the next Semantic Version (`MAJOR.MINOR.PATCH`) based on recent commit messages.
+4. **Lint: Python** – Run `flake8` to validate Python code quality.
+5. **Lint: Kubernetes Manifests** – Validate Kubernetes manifests using `kubeconform`.
+6. **Build & Push Image** – Build the Docker image with BuildKit and push both the versioned tag and `latest` to Docker Hub.
+7. **Deploy to Fresh kind Cluster & Smoke Test** – Create a fresh Kind cluster, deploy the application, and verify that the Vote service returns **HTTP 200**.
+8. **Tag Release** – Create and push a Git tag corresponding to the generated Semantic Version.
+
+### Pipeline Flow
+
+```text
+GitHub Push
+      │
+      ▼
+┌─────────────────────────────┐
+│ Jenkins Pipeline            │
+└─────────────┬───────────────┘
+              │
+              ▼
+      Checkout Repository
+              │
+              ▼
+      Change Detection
+              │
+              ▼
+      Auto Versioning
+              │
+              ▼
+       Python Lint (flake8)
+              │
+              ▼
+ Kubernetes Manifest Validation
+      (kubeconform)
+              │
+              ▼
+ Build Docker Image (BuildKit)
+              │
+              ▼
+ Push Image to Docker Hub
+(versioned tag + latest)
+              │
+              ▼
+ Create Fresh Kind Cluster
+              │
+              ▼
+ Deploy Kubernetes Resources
+              │
+              ▼
+      Smoke Test (HTTP 200)
+              │
+              ▼
+ Create & Push Git Tag
 ```
 
 ---
@@ -433,21 +476,127 @@ POSTGRES_DB
 
 # Changes Made
 
+The original Docker Sample Voting App was modified to improve security, reliability, maintainability, and deployment automation.
+
 ## Vote Service
 
-Updated Flask application to use Kubernetes Secrets.
+### Changes
 
-Before
+- Replaced hardcoded Redis hostname with environment variables.
+- Added support for Kubernetes Secrets.
+- Updated the Docker image to use semantic versioning.
 
-```python
-host="redis"
-```
-
-After
+**Before**
 
 ```python
-host=os.getenv("REDIS_HOST")
+host = "redis"
 ```
+
+**After**
+
+```python
+host = os.getenv("REDIS_HOST")
+```
+
+---
+
+## Worker Service
+
+### Changes
+
+- Removed hardcoded PostgreSQL connection string.
+- Added support for Kubernetes Secrets for database and Redis configuration.
+- Updated the deployment to use the custom Docker image.
+
+**Before**
+
+```text
+Server=db
+```
+
+**After**
+
+```text
+POSTGRES_HOST
+POSTGRES_USER
+POSTGRES_PASSWORD
+POSTGRES_DB
+REDIS_HOST
+REDIS_PORT
+```
+
+The Worker now reads all configuration from Kubernetes Secrets instead of hardcoded values.
+
+---
+
+## Result Service
+
+### Changes
+
+- Replaced hardcoded PostgreSQL configuration with environment variables.
+- Added support for Kubernetes Secrets.
+- Updated Socket.IO configuration to support deployment behind an NGINX Ingress using a custom path.
+
+```javascript
+process.env.POSTGRES_HOST;
+process.env.POSTGRES_USER;
+process.env.POSTGRES_PASSWORD;
+process.env.POSTGRES_DB;
+```
+
+---
+
+## Kubernetes Manifests
+
+The original Kubernetes manifests were enhanced with several production-oriented improvements:
+
+- Converted PostgreSQL from a Deployment to a StatefulSet with Persistent Volume Claims.
+- Converted Redis from a Deployment to a StatefulSet for stable networking and persistent storage.
+- Added Kubernetes Secrets to securely manage database credentials and application configuration.
+- Added a ConfigMap (`vote-configmap`) to externalize non-sensitive application configuration.
+- Added Resource Requests and Limits for better scheduling and resource management.
+- Added Liveness and Readiness Probes to improve application availability.
+- Added a dedicated Namespace (`voting-app`) for resource isolation.
+- Added an NGINX Ingress resource for HTTP/HTTPS access instead of exposing services via NodePort.
+- Added a TLS Secret for HTTPS support in the local Minikube environment.
+- Added a NetworkPolicy to restrict pod-to-pod communication and improve cluster security.
+- Added PodDisruptionBudgets (PDBs) to help maintain application availability during voluntary disruptions.
+- Updated Deployments to consume configuration from Kubernetes Secrets and ConfigMaps.
+- Configured images to work with both locally loaded Minikube images and Docker Hub images.
+
+---
+
+## CI/CD Pipeline
+
+The Jenkins pipeline was enhanced to automate the complete delivery workflow:
+
+- Automatic GitHub webhook trigger.
+- Change detection (build only when `vote/` changes).
+- Automatic Semantic Version generation.
+- Python linting using Flake8.
+- Kubernetes manifest validation using Kubeconform.
+- Docker image build using BuildKit.
+- Push versioned Docker images to Docker Hub.
+- Deploy to a fresh Kind cluster.
+- Automatic smoke testing (HTTP 200 verification).
+- Automatic Git tag creation after successful deployment.
+
+---
+
+## Deployment Automation
+
+Deployment scripts (`Makefile` and `start.sh`) were improved to simplify local setup:
+
+- Automatically start Minikube if not running.
+- Enable required Minikube addons.
+- Build application images only if they do not already exist.
+- Load images directly into Minikube.
+- Create the Kubernetes namespace automatically.
+- Generate a TLS certificate if one does not already exist.
+- Deploy all Kubernetes resources.
+- Wait for StatefulSets and Deployments to become ready.
+- Configure `/etc/hosts` for `votingapp.local`.
+- Support access through NGINX Ingress using both HTTP and HTTPS.
 
 ---
 
