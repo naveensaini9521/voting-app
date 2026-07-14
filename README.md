@@ -201,6 +201,14 @@ chmod +x test.sh
 ./test.sh
 ```
 
+---
+
+## 🎥 Video Walkthrough
+
+[Watch the 5-minute walkthrough on Loom](https://loom.com/your-video-link)
+
+---
+
 # Optional
 
 ## Build Docker Images
