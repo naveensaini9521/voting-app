@@ -208,17 +208,18 @@ make demo
 
 # Test vote & result
 
-````bash
+```bash
 chmod +x test.sh
 ./test.sh
 ```
+
 # Build Docker Images
 
 Vote
 
 ```bash
 docker build -t vote-app ./vote
-````
+```
 
 Worker
 
