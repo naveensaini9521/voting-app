@@ -1,0 +1,54 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: vote-pdb
+  namespace: voting-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: vote
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: result-pdb
+  namespace: voting-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: result
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-pdb
+  namespace: voting-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: db-pdb
+  namespace: voting-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: db
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-pdb
+  namespace: voting-app
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: redis
