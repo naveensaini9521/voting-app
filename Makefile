@@ -24,6 +24,12 @@ demo:
 		-l app.kubernetes.io/component=controller \
 		--timeout=300s
 
+	@echo "Starting Minikube tunnel..."
+	@if ! pgrep -f "minikube tunnel" >/dev/null; then \
+		minikube tunnel 2>&1 & \
+		sleep 10; \
+	fi
+
 	@if ! docker image inspect naveen9521/result-app:$(RESULT_TAG) >/dev/null 2>&1; then \
 		docker build -t naveen9521/result-app:$(RESULT_TAG) ./result; \
 	fi
@@ -50,10 +56,13 @@ demo:
 	kubectl rollout status deployment/worker -n $(NAMESPACE)
 	kubectl rollout status deployment/result -n $(NAMESPACE)
 
+	@echo "Updating /etc/hosts..."
+
 	@if grep -q "votingapp.local" /etc/hosts; then \
-		sudo sed -i "/votingapp.local/d" /etc/hosts; \
+		sudo sed -i.bak '/votingapp.local/d' /etc/hosts; \
 	fi
-	@echo "$$(minikube ip) votingapp.local" | sudo tee -a /etc/hosts >/dev/null
+
+	@echo "127.0.0.1 votingapp.local" | sudo tee -a /etc/hosts >/dev/null
 
 	@echo ""
 	@echo "Deployment completed successfully!"
