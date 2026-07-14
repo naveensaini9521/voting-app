@@ -139,21 +139,21 @@ The original Docker Sample Voting App manifests were functional but not producti
 The following improvements were implemented:
 
 ```
-| Improvement                | Why                                         |
-| -------------------------- | ------------------------------------------- |
-| Kubernetes Secrets         | Removed database credentials from YAML      |
-| StatefulSet for PostgreSQL | Persistent storage across pod restarts      |
-| StatefulSet for Redis      | Stable network identity                     |
-| Liveness Probes            | Automatic recovery from failures            |
-| Readiness Probes           | Prevent traffic before application is ready |
-| Resource Requests          | Better scheduling                           |
-| Resource Limits            | Prevent noisy neighbor issues               |
-| NGINX Ingress              | Browser access without NodePort             |
-| Namespace Isolation        | Better resource organization                |
-| Jenkins CI/CD              | Automated build and deployment              |
-| Semantic Versioning        | Versioned Docker images                     |
-| Smoke Testing              | Validate deployment after rollout           |
-| Automatic Rollback         | Recover from failed deployments             |
+| Improvement | Why |
+|------------|-----|
+| Kubernetes Secrets | Removed database credentials from YAML |
+| StatefulSet for PostgreSQL | Persistent storage across pod restarts |
+| StatefulSet for Redis | Stable network identity |
+| Liveness Probes | Automatic recovery from failures |
+| Readiness Probes | Prevent traffic before application is ready |
+| Resource Requests | Better scheduling |
+| Resource Limits | Prevent noisy neighbor issues |
+| NGINX Ingress | Browser access without NodePort |
+| Namespace Isolation | Better resource organization |
+| Jenkins CI/CD | Automated build and deployment |
+| Semantic Versioning | Versioned Docker images |
+| Smoke Testing | Validate deployment after rollout |
+| Automatic Rollback | Recover from failed deployments |           |
 ```
 
 # Prerequisites
