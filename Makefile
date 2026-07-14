@@ -1,4 +1,6 @@
 NAMESPACE := voting-app
+RESULT_TAG := v1.0.0
+WORKER_TAG := v1.0.0
 
 .PHONY: demo
 
@@ -16,19 +18,21 @@ demo:
 		-n ingress-nginx \
 		--timeout=300s
 
-	@sleep 10
+	kubectl wait \
+		--namespace ingress-nginx \
+		--for=condition=Ready pod \
+		-l app.kubernetes.io/component=controller \
+		--timeout=300s
 
-	@if ! docker images | grep -q "result-app"; then \
-		docker build -t naveen9521/result-app:latest ./result; \
+	@if ! docker image inspect naveen9521/result-app:$(RESULT_TAG) >/dev/null 2>&1; then \
+		docker build -t naveen9521/result-app:$(RESULT_TAG) ./result; \
 	fi
+	minikube image load naveen9521/result-app:$(RESULT_TAG)
 
-	minikube image load naveen9521/result-app:latest
-
-	@if ! docker images | grep -q "worker-app"; then \
-		docker build -t naveen9521/worker-app:latest ./worker; \
+	@if ! docker image inspect naveen9521/worker-app:$(WORKER_TAG) >/dev/null 2>&1; then \
+		docker build -t naveen9521/worker-app:$(WORKER_TAG) ./worker; \
 	fi
-
-	minikube image load naveen9521/worker-app:latest
+	minikube image load naveen9521/worker-app:$(WORKER_TAG)
 
 	kubectl create namespace $(NAMESPACE) \
 		--dry-run=client -o yaml | kubectl apply -f -
@@ -49,13 +53,10 @@ demo:
 	@if grep -q "votingapp.local" /etc/hosts; then \
 		sudo sed -i "/votingapp.local/d" /etc/hosts; \
 	fi
-
-	echo "127.0.0.1 votingapp.local" | sudo tee -a /etc/hosts >/dev/null
+	@echo "$$(minikube ip) votingapp.local" | sudo tee -a /etc/hosts >/dev/null
 
 	@echo ""
-	@echo "==========================================="
 	@echo "Deployment completed successfully!"
-	@echo "==========================================="
 	@echo "Vote App   : http://votingapp.local/"
 	@echo "Result App : http://votingapp.local/result"
 	@echo ""
