@@ -213,7 +213,9 @@ chmod +x test.sh
 ./test.sh
 ```
 
-# Build Docker Images
+# Optional
+
+## Build Docker Images
 
 Vote
 
@@ -235,7 +237,7 @@ docker build -t result-app ./result
 
 ---
 
-# Push Images
+## Push Images
 
 ```bash
 docker tag vote-app username/vote-app:v1
@@ -246,7 +248,7 @@ Repeat for Worker and Result.
 
 ---
 
-# Kubernetes Deployment
+## Kubernetes Deployment
 
 Create Namespace
 
