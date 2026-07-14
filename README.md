@@ -47,9 +47,7 @@ The application consists of five microservices:
 
 # Architecture
 
-```
 ![Architecture](docs/Kubernetes_architecture.png)
-```
 
 ---
 
