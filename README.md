@@ -15,8 +15,9 @@
 - [Prerequisites](#prerequisites)
 - [Jenkins Pipeline](#jenkins-pipeline)
 - [Verification](#verify-deployment)
-- [Troubleshooting](#problems-faced)
+- [Troubleshooting](#troubleshooting)
 - [Future Improvements](#future-improvements)
+- [Trade-offs](#trade-offs)
 - [Author](#author)
 
 ## Overview
@@ -489,6 +490,122 @@ instead of hardcoded values.
 
 ---
 
+# Troubleshooting
+
+Here are common issues you might encounter and how to resolve them.
+
+---
+
+## Pods don't come up
+
+**Symptom:** A pod stays in `Pending`, `CrashLoopBackOff`, or `ImagePullBackOff` for a long time.
+
+### Possible causes and fixes
+
+- **PostgreSQL password mismatch** – if you changed the `postgres-secret` after the StatefulSet was created, the old password is still stored in the Persistent Volume.
+
+**Fix:**
+
+```bash
+kubectl delete statefulset db -n voting-app
+kubectl delete pvc db-data-db-0 -n voting-app
+kubectl apply -f k8s-specifications/db-statefulset.yaml -n voting-app
+```
+
+- **Worker waiting for db** – if the worker logs show `Waiting for db` indefinitely, check that the database service is running and the `POSTGRES_HOST` secret is correct (`db.voting-app.svc.cluster.local`).
+
+**Verify connectivity:**
+
+```bash
+kubectl exec -it deployment/worker -n voting-app -- nslookup db
+```
+
+---
+
+## Votes don't appear in the Result app
+
+**Symptom:** You cast a vote but the Result page doesn't update.
+
+### Worker not consuming from Redis
+
+Check the queue length:
+
+```bash
+kubectl exec -it redis-0 -n voting-app -- redis-cli LLEN votes
+```
+
+If the queue remains greater than zero, inspect the worker logs:
+
+```bash
+kubectl logs deployment/worker -n voting-app --tail=50
+```
+
+### Redis connectivity
+
+```bash
+kubectl exec -it deployment/worker -n voting-app -- nslookup redis
+```
+
+### Result app cannot read PostgreSQL
+
+```bash
+kubectl logs deployment/result -n voting-app --tail=50
+```
+
+Look for:
+
+```
+Connected to db
+```
+
+If not present, verify the `POSTGRES_HOST` secret.
+
+### Socket.IO path mismatch
+
+If the page updates only after refreshing, ensure the custom Socket.IO path is configured consistently in both `server.js` and `app.js`.
+
+---
+
+## ImagePullBackOff / CrashLoopBackOff
+
+**Symptom:** Pod status shows `ImagePullBackOff` or `CrashLoopBackOff`.
+
+### Possible causes
+
+- Docker image tag doesn't exist.
+- Liveness probe starts too early.
+- Memory limit is too low.
+
+### Fixes
+
+- Push the correct Docker image tag or use `latest` with `imagePullPolicy: IfNotPresent`.
+- Increase `initialDelaySeconds` and `failureThreshold`.
+- Increase container memory limits.
+
+---
+
+## NodePort port conflict
+
+**Symptom**
+
+```
+The Service "result" is invalid:
+spec.ports[0].nodePort:
+provided port is already allocated
+```
+
+### Cause
+
+Hardcoded `nodePort` values conflict with another service.
+
+### Fix
+
+Remove the `nodePort` field from the Service manifest and let Kubernetes assign a port automatically.
+
+For production deployments, prefer **Ingress** or **LoadBalancer** services instead.
+
+---
+
 # Problems Faced
 
 ## 1. Worker continuously showing "Waiting for db"
@@ -607,6 +724,21 @@ Delete Everything
 ```bash
 kubectl delete namespace voting-app
 ```
+
+---
+
+# Trade-offs
+
+In the interest of time and simplicity, the following trade-offs were made:
+
+- **Minikube vs. managed cluster** – Minikube is used for local development. In production, a managed Kubernetes service (EKS, GKE, AKS) would provide better reliability, scalability, and operational features.
+- **Ingress instead of LoadBalancer** – NGINX Ingress exposes services locally. In production, additional configuration such as TLS termination and external load balancing would be required.
+- **Self-hosted Jenkins** – Jenkins runs on the same machine as the Kubernetes cluster. A production environment would typically use dedicated build agents or a managed CI/CD platform.
+- **Single replica deployments** – Most services run a single replica. High availability would require multiple replicas and careful handling of stateful services such as PostgreSQL and Redis.
+- **Basic monitoring** – Prometheus, Grafana, and centralized logging are not included. Production environments should implement monitoring, alerting, and log aggregation.
+- **No network policies** – All pods can communicate by default. A production deployment should enforce Kubernetes NetworkPolicies to implement zero-trust networking.
+
+These trade-offs keep the project simple while demonstrating production-inspired Kubernetes and CI/CD practices. The items listed under **Future Improvements** describe the next logical enhancements.
 
 ---
 

@@ -2,6 +2,8 @@
 set -e
 
 NAMESPACE="voting-app"
+RESULT_TAG="v1.0.0"
+WORKER_TAG="v1.0.0"
 
 echo "Starting Minikube..."
 
@@ -21,15 +23,19 @@ kubectl rollout status deployment/ingress-nginx-controller \
 
 sleep 10
 
-if ! docker images | grep -q "result-app"; then
-    docker build -t naveen9521/result-app:latest ./result
-    minikube image load naveen9521/result-app:latest
+# Build and load result-app with pinned tag
+if ! docker image inspect "naveen9521/result-app:${RESULT_TAG}" >/dev/null 2>&1; then
+    echo "Building result-app:${RESULT_TAG}..."
+    docker build -t "naveen9521/result-app:${RESULT_TAG}" ./result
 fi
+minikube image load "naveen9521/result-app:${RESULT_TAG}"
 
-if ! docker images | grep -q "worker-app"; then
-    docker build -t naveen9521/worker-app:latest ./worker
-    minikube image load naveen9521/worker-app:latest
+# Build and load worker-app with pinned tag
+if ! docker image inspect "naveen9521/worker-app:${WORKER_TAG}" >/dev/null 2>&1; then
+    echo "Building worker-app:${WORKER_TAG}..."
+    docker build -t "naveen9521/worker-app:${WORKER_TAG}" ./worker
 fi
+minikube image load "naveen9521/worker-app:${WORKER_TAG}"
 
 echo "Creating namespace..."
 
@@ -40,6 +46,7 @@ echo "Deploying application..."
 
 kubectl apply -f k8s-specifications/ -n ${NAMESPACE}
 
+# Restart deployments to pick up new images (if already running)
 kubectl rollout restart deployment/result -n ${NAMESPACE}
 kubectl rollout restart deployment/vote -n ${NAMESPACE}
 kubectl rollout restart deployment/worker -n ${NAMESPACE}
@@ -55,17 +62,17 @@ kubectl rollout status deployment/vote -n ${NAMESPACE}
 kubectl rollout status deployment/worker -n ${NAMESPACE}
 kubectl rollout status deployment/result -n ${NAMESPACE}
 
+# Update /etc/hosts with Minikube IP
 MINIKUBE_IP=$(minikube ip)
-
 if grep -q "votingapp.local" /etc/hosts; then
     sudo sed -i "/votingapp.local/d" /etc/hosts
 fi
-
-# echo "${MINIKUBE_IP} votingapp.local" | sudo tee -a /etc/hosts >/dev/null
+echo "${MINIKUBE_IP} votingapp.local" | sudo tee -a /etc/hosts >/dev/null
 
 echo
+echo "==========================================="
 echo "Deployment completed successfully!"
-echo
+echo "==========================================="
 echo "Vote App   : http://votingapp.local/"
 echo "Result App : http://votingapp.local/result"
 echo
