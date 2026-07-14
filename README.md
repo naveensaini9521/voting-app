@@ -43,9 +43,13 @@ The application consists of five microservices:
 - Redis
 - PostgreSQL
 
+---
+
 # Architecture
 
+```
 ![Architecture](docs/Kubernetes_architecture.png)
+```
 
 ---
 
