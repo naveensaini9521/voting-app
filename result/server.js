@@ -5,9 +5,10 @@ var express = require('express'),
     path = require('path'),
     app = express(),
     server = require('http').Server(app),
-    io = require('socket.io')(server);
+    // io = require('socket.io')(server);
+    io = require('socket.io')(server, {path: '/result/socket.io'});
 
-var port = process.env.PORT || 4000;
+var port = process.env.PORT || 80; // change port 4000 to 80
 
 io.on('connection', function (socket) {
   socket.emit('message', { text : 'Welcome!' });
@@ -16,7 +17,6 @@ io.on('connection', function (socket) {
   });
 });
 
-// ✅ READ DATABASE CONFIG FROM ENVIRONMENT VARIABLES
 var postgresHost = process.env.POSTGRES_HOST || 'db';
 var postgresUser = process.env.POSTGRES_USER || 'postgres';
 var postgresPassword = process.env.POSTGRES_PASSWORD || 'postgres';
@@ -71,8 +71,18 @@ app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/views'));
 
+app.use('/result', express.static(__dirname + '/views'));
+
 app.get('/', function (req, res) {
   res.sendFile(path.resolve(__dirname + '/views/index.html'));
+});
+
+app.get('/result', function (req, res) {
+  res.sendFile(path.resolve(__dirname + '/views/index.html'));
+});
+
+app.get('/result/socket.io.js', function(req, res) {
+  res.sendFile(path.join(__dirname, 'node_modules', 'socket.io', 'client-dist', 'socket.io.js'));
 });
 
 server.listen(port, function () {
