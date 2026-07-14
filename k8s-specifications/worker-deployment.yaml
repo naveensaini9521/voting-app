@@ -15,9 +15,22 @@ spec:
       labels:
         app: worker
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - worker
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: worker
-          image: naveen9521/worker-app:latest # Your custom image
+          image: naveen9521/worker-app:v1.0.0
+          imagePullPolicy: IfNotPresent # Pinned version
           env:
             - name: POSTGRES_HOST
               valueFrom:
@@ -61,18 +74,17 @@ spec:
               command:
                 - sh
                 - -c
-                - "pgrep -f 'dotnet Worker.dll' || exit 1"
+                - "pgrep -f 'Worker' || exit 1"
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
-
           readinessProbe:
             exec:
               command:
                 - sh
                 - -c
-                - "pgrep -f 'dotnet Worker.dll' || exit 1"
+                - "pgrep -f 'Worker' || exit 1"
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 2

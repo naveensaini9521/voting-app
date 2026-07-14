@@ -4,22 +4,27 @@ metadata:
   name: voting-app-ingress
   namespace: voting-app
   annotations:
-    # nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/websocket-services: result
 spec:
   ingressClassName: nginx
+  tls:
+    - hosts:
+        - votingapp.local
+      secretName: votingapp-tls # Create this secret with a TLS certificate
   rules:
     - host: votingapp.local
       http:
         paths:
-          - path: /result
-            pathType: Prefix
+          - path: /result(/|$)(.*)
+            pathType: ImplementationSpecific
             backend:
               service:
                 name: result
                 port:
                   number: 80
-
           - path: /
             pathType: Prefix
             backend:

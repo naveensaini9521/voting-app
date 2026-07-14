@@ -15,9 +15,22 @@ spec:
       labels:
         app: result
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - result
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: result
-          image: naveen9521/result-app:latest
+          image: naveen9521/result-app:v1.0.0
+          imagePullPolicy: IfNotPresent # Pinned version
           ports:
             - containerPort: 80
               name: result

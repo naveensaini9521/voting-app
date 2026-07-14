@@ -4,30 +4,36 @@ metadata:
   name: redis
   labels:
     app: redis
-
 spec:
   serviceName: redis
   replicas: 1
-
   selector:
     matchLabels:
       app: redis
-
   template:
     metadata:
       namespace: voting-app
       labels:
         app: redis
-
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - redis
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: redis
           image: redis:7-alpine
-
           ports:
             - containerPort: 6379
               name: redis
-
           volumeMounts:
             - name: redis-data
               mountPath: /data

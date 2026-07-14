@@ -16,6 +16,19 @@ spec:
       labels:
         app: db
     spec:
+      # Optional: anti-affinity to spread pods if replicas > 1
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - db
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: postgres
           image: postgres:15-alpine

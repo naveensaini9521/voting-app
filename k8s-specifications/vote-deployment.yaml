@@ -15,6 +15,18 @@ spec:
       labels:
         app: vote
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - vote
+                topologyKey: kubernetes.io/hostname
       containers:
         - image: docker.io/naveen9521/vote-app-project:0.0.1
           name: vote
@@ -32,15 +44,16 @@ spec:
                 secretKeyRef:
                   name: redis-secret
                   key: REDIS_PORT
+            # OPTION_A and OPTION_B now come from ConfigMap
             - name: OPTION_A
               valueFrom:
-                secretKeyRef:
-                  name: vote-secret
+                configMapKeyRef:
+                  name: vote-config
                   key: OPTION_A
             - name: OPTION_B
               valueFrom:
-                secretKeyRef:
-                  name: vote-secret
+                configMapKeyRef:
+                  name: vote-config
                   key: OPTION_B
           livenessProbe:
             httpGet:
