@@ -29,8 +29,9 @@ kubectl wait \
 
 echo "Starting Minikube tunnel..."
 if ! pgrep -f "minikube tunnel" >/dev/null; then
-    minikube tunnel 2>&1 &
-    sleep 10
+    sudo -v
+    nohup minikube tunnel >/dev/null 2>&1 &
+    sleep 5
 fi
 
 if ! docker image inspect "naveen9521/result-app:${RESULT_TAG}" >/dev/null 2>&1; then

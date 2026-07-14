@@ -26,8 +26,10 @@ demo:
 
 	@echo "Starting Minikube tunnel..."
 	@if ! pgrep -f "minikube tunnel" >/dev/null; then \
-		minikube tunnel 2>&1 & \
-		sleep 10; \
+		echo "Enter your password to allow minikube tunnel to create network routes:"; \
+		sudo -v; \
+		sudo nohup minikube tunnel >/dev/null 2>&1 & \
+		sleep 5; \
 	fi
 
 	@if ! docker image inspect naveen9521/result-app:$(RESULT_TAG) >/dev/null 2>&1; then \
@@ -57,7 +59,6 @@ demo:
 	kubectl rollout status deployment/result -n $(NAMESPACE)
 
 	@echo "Updating /etc/hosts..."
-
 	@if grep -q "votingapp.local" /etc/hosts; then \
 		sudo sed -i.bak '/votingapp.local/d' /etc/hosts; \
 	fi
