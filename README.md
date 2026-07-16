@@ -205,7 +205,7 @@ chmod +x test.sh
 
 ## 🎥 Video Walkthrough
 
-[Watch the 5-minute walkthrough on Loom](https://loom.com/your-video-link)
+[Watch the 5-minute walkthrough on Youtube](https://www.youtube.com/watch?v=BWLLF8HXo-8)
 
 ---
 
