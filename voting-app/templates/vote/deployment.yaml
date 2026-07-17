@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "voting-app.fullname" . }}-vote
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: vote
+    chart: {{ include "voting-app.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.vote.replicas }}
+  selector:
+    matchLabels:
+      app: vote
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: vote
+        release: {{ .Release.Name }}
+    spec:
+      {{- with .Values.vote.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - image: {{ .Values.vote.image.repository }}:{{ .Values.vote.image.tag }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy | default "IfNotPresent" }}
+          name: vote
+          ports:
+            - containerPort: 80
+              name: vote
+          env:
+            - name: REDIS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "voting-app.fullname" . }}-redis-secret
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "voting-app.fullname" . }}-redis-secret
+                  key: REDIS_PORT
+            - name: OPTION_A
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "voting-app.fullname" . }}-vote-config
+                  key: OPTION_A
+            - name: OPTION_B
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "voting-app.fullname" . }}-vote-config
+                  key: OPTION_B
+          {{- with .Values.vote.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
